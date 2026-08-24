@@ -2,8 +2,8 @@ import joblib
 import os
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(current_dir, 'email_classifier_model.pkl')
-vectorizer_path = os.path.join(current_dir, 'tfidf_vectorizer.pkl')
+model_path = os.path.join(current_dir, 'models', 'email_classifier_model.pkl')
+vectorizer_path = os.path.join(current_dir, 'models', 'tfidf_vectorizer.pkl')
 
 model = joblib.load(model_path)
 vectorizer = joblib.load(vectorizer_path)

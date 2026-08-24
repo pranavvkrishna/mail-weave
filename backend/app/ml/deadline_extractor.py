@@ -1,15 +1,15 @@
 import re
 import spacy
 
-# loading spaCy's small english NLP model
+# load spaCy's small English NLP model
 nlp = spacy.load("en_core_web_sm")
 
-# regex fallback for compact time formats spaCy sometimes misses [like "6:30pm"]
+# regex fallback for compact time formats spaCy sometimes misses (like "6:30pm")
 TIME_REGEX = re.compile(r'\b\d{1,2}:\d{2}\s?(?:am|pm|AM|PM)\b')
 
 
 def extract_time_fallback(text: str):
-    # try regex if spaCy can't find time
+    # regex if spaCy can't find time
     match = TIME_REGEX.search(text)
     return match.group(0) if match else None
 
@@ -20,7 +20,8 @@ def extract_deadline(text: str):
     dates = [ent.text for ent in doc.ents if ent.label_ == "DATE"]
     times = [ent.text for ent in doc.ents if ent.label_ == "TIME"]
 
-    date_part = dates[0] if dates else None
+    # prefer the longest date match (most complete/specific one)
+    date_part = max(dates, key=len) if dates else None
     time_part = times[0] if times else extract_time_fallback(text)
 
     if date_part and time_part:
@@ -37,7 +38,7 @@ def extract_all_deadlines(text: str):
     dates = [ent.text for ent in doc.ents if ent.label_ == "DATE"]
     times = [ent.text for ent in doc.ents if ent.label_ == "TIME"]
 
-    # regex fallback if spaCy found no times
+    # use regex fallback if spaCy found no times
     if not times:
         fallback = extract_time_fallback(text)
         if fallback:
@@ -46,7 +47,7 @@ def extract_all_deadlines(text: str):
     return {"dates": dates, "times": times}
 
 
-# manual test
+# quick manual test
 if __name__ == "__main__":
     test_emails = [
         "CS161 Homework 3 due Friday at 11:59 PM",
