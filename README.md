@@ -1,62 +1,72 @@
 # MailWeave
 
-A Chrome extension that automatically classifies your Gmail emails using a locally-run machine learning model. When you open an email, MailWeave extracts its subject and body, sends it to a FastAPI backend, and displays a color-coded category badge directly inside Gmail.
+A Chrome extension that classifies Gmail emails in real time and automatically builds a deadline checklist. When you open an email, MailWeave extracts its subject and body, sends it to a FastAPI backend, and displays a color-coded category badge inside Gmail — while any detected deadline gets added to a persistent, editable to-do list in the extension popup.
 
 ---
 
 ## How It Works
 
-```
 Gmail (browser)
-    └── content.js          ← watches for email navigation, extracts email data
-          └── background.js ← forwards data to local API server
-                └── FastAPI (localhost:8000)
-                      └── ML Classifier (TF-IDF + Logistic Regression)
-                            └── returns category + confidence → badge in Gmail
-```
+└── content.js watches for email navigation, extracts subject/body
+└── background.js forwards data to local API server (bypasses CORS)
+└── FastAPI (localhost:8000)
+├── Classifier: TF-IDF + Logistic Regression → category, confidence
+└── Deadline Extractor: spaCy NER + regex fallback → deadline
+└── response → badge in Gmail + task added to checklist
+
+
+The checklist itself lives in `chrome.storage.local`, so viewing, checking off, editing, and manually adding tasks all work without the backend running. Only classifying **new** emails requires the local server to be active.
 
 ---
 
 ## Categories
 
-| Category     | Badge Color |
-|--------------|-------------|
-| Assignment   | Blue        |
-| Exam         | Yellow      |
-| Subscription | Red         |
-| Social       | Green       |
-| Promotions   | Purple      |
-| Other        | Grey        |
+9 categories, tuned for a student inbox:
+
+| Category        | Badge Color     |
+|------------------|-----------------|
+| Assignment       | Blue            |
+| Exam             | Yellow          |
+| Clubs & Orgs     | Teal            |
+| Social           | Green           |
+| Career           | Orange          |
+| Academic-Admin   | Indigo          |
+| Subscription     | Red             |
+| Promotions       | Purple          |
+| Other            | Grey            |
 
 ---
 
 ## Project Structure
 
-```
 mail-weave/
 ├── extension/
-│   ├── manifest.json       # Chrome Extension Manifest V3 config
-│   ├── content.js          # Injected into Gmail — reads emails, adds badges
-│   ├── background.js       # Service worker — relays requests to FastAPI
-│   ├── popup.html          # Extension popup UI
-│   └── popup.js            # Loads current email data from chrome.storage
+│ ├── manifest.json
+│ ├── content.js # reads Gmail emails, adds badges, saves checklist items
+│ ├── background.js # service worker, relays requests to FastAPI
+│ ├── popup.html / popup.js # checklist UI: checkboxes, manual add, sorting
+│ └── icons/
 │
 └── backend/
-    └── app/
-        ├── main.py         # FastAPI server with /classify and /test endpoints
-        └── ml/
-            ├── classifier.py           # Loads model and runs inference
-            ├── train.py                # Training script (run once to generate model files)
-            ├── email_classifier_model.pkl   # Trained Logistic Regression model
-            └── tfidf_vectorizer.pkl         # Fitted TF-IDF vectorizer
-```
+└── app/
+├── main.py # FastAPI: /classify, /test
+└── ml/
+├── classifier.py # loads model, runs inference
+├── deadline_extractor.py # spaCy NER + regex fallback for dates/times
+├── train.py # trains + saves model
+├── evaluate.py # confusion matrix, error analysis, feature importance
+├── data/ # email_training_data.csv (not committed, see below)
+├── models/ # generated .pkl files (not committed, see below)
+└── outputs/ # confusion_matrix.png
+
+
+**Note on data/models:** the training CSV and trained `.pkl` files are intentionally not committed to this repo. Run `train.py` yourself with your own labeled data (same `text,label` CSV format) to generate them locally.
 
 ---
 
 ## Setup
 
 ### Prerequisites
-
 - Python 3.8+
 - Google Chrome
 
@@ -64,47 +74,47 @@ mail-weave/
 
 ```bash
 cd backend
-pip install fastapi uvicorn scikit-learn joblib pandas
+pip install fastapi uvicorn scikit-learn joblib pandas matplotlib spacy
+python -m spacy download en_core_web_sm
 ```
 
-If you need to train the model from scratch, place your `email_training_data.csv` (columns: `text`, `label`) inside `backend/app/ml/` and run:
+Place a CSV at `backend/app/ml/data/email_training_data.csv` with columns `text,label`, then:
 
 ```bash
 cd backend/app/ml
 python train.py
 ```
 
-This generates `email_classifier_model.pkl` and `tfidf_vectorizer.pkl`.
+This generates `models/email_classifier_model.pkl` and `models/tfidf_vectorizer.pkl`.
 
 Start the API server:
 
 ```bash
 cd backend
-uvicorn app.main:app --reload --port 8000
+uvicorn app.main:app --reload
 ```
 
-Verify it's running:
+Verify:
 
-```
 GET http://localhost:8000/test
 → {"message": "works!"}
-```
+
 
 ### 2. Chrome Extension
 
-1. Open Chrome and go to `chrome://extensions`
-2. Enable **Developer mode** (top right)
-3. Click **Load unpacked** and select the `extension/` folder
-4. The MailWeave icon will appear in your toolbar
+1. Go to `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**, select the `extension/` folder
+4. The MailWeave icon appears in the toolbar
 
 ---
 
 ## Usage
 
-1. Make sure the FastAPI server is running on `localhost:8000`
-2. Open [Gmail](https://mail.google.com)
-3. Click on any email — MailWeave will automatically read it, classify it, and display a badge next to the subject line
-4. Click the MailWeave toolbar icon to see a popup with the current email's sender, subject, date, and body preview
+1. Make sure the FastAPI server is running
+2. Open Gmail, click any email — MailWeave classifies it and shows a badge
+3. If a deadline is detected, the task is automatically added to your checklist
+4. Click the MailWeave toolbar icon to view, check off, edit, or manually add checklist tasks — this works even if the backend is offline
 
 ---
 
@@ -112,13 +122,11 @@ GET http://localhost:8000/test
 
 ### `POST /classify`
 
-Classifies an email given its subject and snippet.
-
-**Request body:**
+**Request:**
 ```json
 {
-  "subject": "CS101 Assignment 3 Due Friday",
-  "snippet": "Please submit your work before midnight..."
+  "subject": "CS161 Homework 3 due Friday",
+  "snippet": "Please submit before 11:59 PM"
 }
 ```
 
@@ -126,89 +134,53 @@ Classifies an email given its subject and snippet.
 ```json
 {
   "category": "Assignment",
-  "confidence": 0.91
+  "confidence": 0.87,
+  "deadline": "Friday at 11:59 PM"
 }
 ```
 
 ### `GET /test`
-
-Health check endpoint.
-
-```json
-{"message": "works!"}
-```
+Health check → `{"message": "works!"}`
 
 ---
 
-## ML Model Details
+## Model Details
 
-| Component  | Details                              |
-|------------|--------------------------------------|
-| Vectorizer | TF-IDF, top 100 features             |
-| Model      | Logistic Regression (max_iter=1000)  |
-| Split      | 80% train / 20% test (stratified)    |
-| Input      | Subject + body concatenated as one string |
+| Component      | Details |
+|-----------------|---------|
+| Vectorizer      | TF-IDF, unigrams + bigrams, English stopwords removed, `min_df=2`, top 300 features |
+| Classifier      | Logistic Regression (`max_iter=1000`) |
+| Deadline extraction | spaCy `en_core_web_sm` NER (`DATE`/`TIME` entities) with a regex fallback for compact time formats spaCy misses |
+| Evaluation      | 80/20 stratified split + 5-fold cross-validation |
+| Accuracy        | ~85.6% cross-validated, across 9 categories, ~350 hand-labeled examples |
+| Input           | Subject + body snippet, concatenated |
+
+### Why TF-IDF over embeddings
+Given the dataset size (~350 examples), TF-IDF's sparse, interpretable features are less prone to overfitting than transformer-based embeddings, and allow direct inspection of which terms drive each prediction (see `evaluate.py` output).
+
+### Error Analysis
+Full confusion matrix and misclassification breakdown available via `evaluate.py`. Two main error patterns identified:
+1. **Genuine category ambiguity** — e.g. a club-hosted social event can reasonably belong to either "Clubs & Orgs" or "Social"
+2. **Limited examples for edge cases** — some Assignment/Exam emails share reminder-style phrasing that the model hasn't seen enough variety of yet
+
+![Confusion Matrix](backend/app/ml/outputs/confusion_matrix.png)
+
+The matrix shows Exam, Subscription, and Promotions as the strongest-performing categories, while Clubs & Orgs, Assignment, and Academic-Admin show more cross-category confusion — consistent with the overlapping vocabulary those categories share (e.g. "deadline," "reminder," "meeting").
 
 ---
 
-## Planned: Email-Driven To-Do List
+## Known Limitations
 
-The next major feature is a dynamic task list built automatically from scraped email data — living inside the extension popup alongside the current email preview.
+- **Requires a local backend.** Classification and deadline extraction depend on the FastAPI server running on `localhost:8000`. A production version would deploy this to a hosted API so the extension works standalone.
+- **DOM-based scraping.** Gmail data is read via CSS selectors on the page, which can break if Gmail changes its UI. A more robust version would use the official Gmail API.
+- **Deadline extraction isn't perfect.** spaCy's NER occasionally misses or mis-scopes dates in unusual phrasing; since checklist items are editable, this is treated as an acceptable tradeoff rather than a blocker.
+- **Inbox-level badges not yet implemented** — badges currently only appear once an email is opened, not in the inbox list view.
 
-### Concept
+---
 
-As MailWeave reads emails, it will extract actionable items (deadlines, requests, follow-ups) and surface them as checkable tasks. The list persists in `chrome.storage.local` so it survives browser restarts and stays in sync with what's in your inbox.
+## Planned Improvements
 
-### Behaviour
-
-- **Auto-generation** — when an email is classified, its subject, category, sender, and any detected date/deadline are parsed and added as a task entry
-- **Checkoff** — each task has a checkbox; checking it marks it done and visually strikes it through (done tasks sink to the bottom automatically)
-- **Persistence** — task state (checked/unchecked, custom edits) is saved locally so nothing is lost on popup close
-
-### Sort Options
-
-The task list will support multiple sort modes toggled from the popup header:
-
-| Sort Mode      | Behaviour |
-|----------------|-----------|
-| **Importance** _(default)_ | Assignment and Exam tasks first, then Social/Subscription/Promotions, then Other; within each tier, earlier detected dates rank higher |
-| **Date**       | Soonest deadline or received date at the top |
-| **Category**   | Grouped by classification label with colour-coded section headers |
-| **Sender**     | Alphabetical by sender email address |
-| **Unread first** | Unchecked tasks always above completed ones regardless of other ordering |
-
-### Priority Scoring
-
-Each task will get an internal priority score (0–100) derived from:
-
-- **Category weight** — Exam → 100, Assignment → 80, Social → 50, Subscription/Promotions → 30, Other → 20
-- **ML confidence** — score scaled by the classifier's confidence value (higher confidence = stronger signal)
-- **Deadline proximity** — tasks with a date within 48 h get a +20 boost; within 7 days get +10
-- **Checked penalty** — completed tasks receive a −200 offset so they always fall below active ones
-
-### Planned UI (Popup)
-
-```
-┌─────────────────────────────────┐
-│  MailWeave             [⚙ Sort ▾]│
-├─────────────────────────────────┤
-│  [ ] Assignment  •  Due Fri     │  ← blue badge
-│      CS101 Assignment 3         │
-│      from: prof@uni.edu         │
-│                                 │
-│  [ ] Exam  •  Due Mon           │  ← yellow badge
-│      Midterm — Room 204         │
-│      from: registrar@uni.edu    │
-│                                 │
-│  [x] Social                     │  ← struck through, grey
-│      Study group invite         │
-│      from: friend@gmail.com     │
-└─────────────────────────────────┘
-```
-
-### Implementation Plan
-
-1. **`parser.js`** — regex + heuristic extractor that pulls deadline phrases ("due Friday", "by 5pm", "submit before") and maps them to a JS `Date`
-2. **`taskStore.js`** — CRUD helpers over `chrome.storage.local` for the task array; handles deduplication by email hash
-3. **`popup.html/js`** updates — render the task list, wire up checkboxes, and add the sort dropdown with the five modes above
-4. **`/extract` endpoint (FastAPI)** — optional backend endpoint that uses the ML model's confidence alongside a keyword list to return a structured `{ action, deadline, priority }` object per email
+- **Inbox-level badges** — classify and badge emails directly in the inbox list, before opening them
+- **Priority scoring / sort modes** — rank checklist tasks by category weight, model confidence, and deadline proximity, with sort options (importance, date, category, sender)
+- **Gmail API integration** — replace DOM scraping with the official API for reliability and batch classification
+- **Deployed backend** — host the FastAPI service so the extension works without a local server
