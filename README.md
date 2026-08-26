@@ -154,21 +154,20 @@ Health check → `{"message": "works!"}`
 | Classifier | Logistic Regression (`max_iter=1000`) |
 | Deadline extraction | spaCy `en_core_web_sm` NER (`DATE`/`TIME` entities) with a regex fallback for compact time formats spaCy misses |
 | Evaluation | 80/20 stratified split + 5-fold cross-validation |
-| Accuracy | ~85.6% cross-validated, across 9 categories, ~350 hand-labeled examples |
+| Accuracy | ~90.6% cross-validated, across 9 categories, ~650 hand-labeled examples (balanced ~74-75 per category) |
 | Input | Subject + body snippet, concatenated |
 
 ### Why TF-IDF over embeddings
-Given the dataset size (~350 examples), TF-IDF's sparse, interpretable features are less prone to overfitting than transformer-based embeddings, and allow direct inspection of which terms drive each prediction (see `evaluate.py` output).
+Given the dataset size (~650 examples), TF-IDF's sparse, interpretable features are less prone to overfitting than transformer-based embeddings, and allow direct inspection of which terms drive each prediction (see `evaluate.py` output).
 
 ### Error Analysis
-Full confusion matrix and misclassification breakdown available via `evaluate.py`. Two main error patterns identified:
+Full confusion matrix and misclassification breakdown available via `evaluate.py`. During development, an early version of the dataset (~440 rows) had uneven class sizes after targeted additions, which caused cross-validated accuracy to drop even as single-split accuracy looked artificially high — a useful reminder that a single train/test split can be misleading. Rebalancing all categories to ~74-75 examples each resolved this and raised cross-validated accuracy to 90.6%.
 
-1. **Genuine category ambiguity** — e.g. a club-hosted social event can reasonably belong to either "Clubs & Orgs" or "Social"
-2. **Limited examples for edge cases** — some Assignment/Exam emails share reminder-style phrasing the model hasn't seen enough variety of yet
+Remaining error patterns are mostly genuine ambiguity rather than data gaps — e.g. a club-hosted social event can reasonably belong to either "Clubs & Orgs" or "Social," and softer-phrased Career/Promotions emails (without obvious keywords like "internship" or "sale") are still occasionally confused with adjacent categories.
 
 ![Confusion Matrix](backend/app/ml/outputs/confusion_matrix.png)
 
-The matrix shows Exam, Subscription, and Promotions as the strongest-performing categories, while Clubs & Orgs, Assignment, and Academic-Admin show more cross-category confusion — consistent with the overlapping vocabulary those categories share (e.g. "deadline," "reminder," "meeting").
+The matrix shows Subscription, Exam, and Assignment as the strongest-performing categories, while Career, Promotions, and Other show comparatively more cross-category confusion.
 
 ---
 
