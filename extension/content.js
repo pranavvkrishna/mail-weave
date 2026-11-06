@@ -9,7 +9,9 @@ function classifyEmail(emailData) {
             action: "classifyEmail",
             data: {
                 subject: emailData.subject,
-                snippet: emailData.body
+                snippet: emailData.body,
+                body: emailData.fullBody,
+                date: emailData.date
             }
         },
         (response) => {
@@ -22,7 +24,7 @@ function classifyEmail(emailData) {
                 addCategoryBadge(response.data.category, response.data.confidence);
 
                 if (response.data.deadline) {
-                    addToChecklist(emailData.subject, response.data.deadline, response.data.category);
+                    addToChecklist(emailData.subject, response.data.deadline, response.data.category, response.data.deadline_iso);
                 }
             } else {
                 console.error("MailWeave: Classification failed:", response.error);
@@ -32,7 +34,7 @@ function classifyEmail(emailData) {
 }
 
 
-function addToChecklist(subject, deadline, category) {
+function addToChecklist(subject, deadline, category, deadlineIso) {
     const emailId = window.location.hash;
 
     chrome.storage.local.get(['checklist'], function(result) {
@@ -48,6 +50,7 @@ function addToChecklist(subject, deadline, category) {
             id: Date.now().toString(),
             text: subject,
             deadline: deadline,
+            deadlineIso: deadlineIso || null,
             category: category,
             source: "email",
             done: false,
@@ -125,6 +128,7 @@ function readEmail() {
 
     const emailBody = document.querySelector("div.a3s.aiL");
     const body = emailBody ? emailBody.textContent : "Body not found";
+    const fullText = emailBody ? emailBody.innerText : body;
 
     const emailSender = document.querySelector("span.gD");
     const sender = emailSender ? emailSender.getAttribute("email") : "Sender not found";
@@ -136,7 +140,8 @@ function readEmail() {
         subject: subject,
         sender: sender,
         date: date,
-        body: body.substring(0, 250) + "..."
+        body: body.substring(0, 250) + "...",
+        fullBody: fullText.substring(0, 5000)
     };
 
     console.log("MailWeave: Extracted email data: ", emailData);
