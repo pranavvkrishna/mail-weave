@@ -13,7 +13,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             },
             body: JSON.stringify({
                 subject: request.data.subject,
-                snippet: request.data.snippet
+                snippet: request.data.snippet,
+                body: request.data.body,
+                date: request.data.date
             })
         })
         .then(response => response.json())
