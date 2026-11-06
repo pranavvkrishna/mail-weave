@@ -32,9 +32,17 @@ document.addEventListener("DOMContentLoaded", function() {
             return;
         }
 
-        // unchecked first, then within each group tasks with a deadline come before ones without
+        // unchecked first, then soonest date first.
+        // tasks with only text dates come after dated ones, tasks with no date last.
         const sorted = [...checklist].sort((a, b) => {
             if (a.done !== b.done) return a.done - b.done;
+
+            const aKey = a.deadlineIso || null;
+            const bKey = b.deadlineIso || null;
+            if (aKey && bKey) return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;  // ISO dates sort correctly as text
+            if (aKey) return -1;
+            if (bKey) return 1;
+
             if (a.deadline && !b.deadline) return -1;
             if (!a.deadline && b.deadline) return 1;
             return 0;
@@ -45,7 +53,7 @@ document.addEventListener("DOMContentLoaded", function() {
                 <input type="checkbox" class="task-checkbox" ${task.done ? 'checked' : ''}>
                 <div class="task-content">
                     <div class="task-text">${escapeHtml(task.text)}</div>
-                    ${task.deadline ? `<div class="task-deadline">Due: ${escapeHtml(task.deadline)}</div>` : ''}
+                    ${task.deadline ? `<div class="task-deadline">${deadlineLabel(task.category)} ${escapeHtml(task.deadline)}</div>` : ''}
                     ${task.category ? `<span class="task-category">${escapeHtml(task.category)}</span>` : ''}
                 </div>
                 <button class="delete-btn" title="Delete">✕</button>
@@ -106,6 +114,12 @@ document.addEventListener("DOMContentLoaded", function() {
                 renderChecklist(checklist);
             });
         });
+    }
+    
+    // assignments, exams etc. are "Due"; events and everything else are "When"
+    function deadlineLabel(category) {
+        const dueCategories = ["Assignment", "Exam", "Career", "Academic-Admin", "Manual"];
+        return dueCategories.includes(category) ? "Due:" : "When:";
     }
 
     function escapeHtml(str) {
